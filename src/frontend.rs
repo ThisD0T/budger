@@ -62,6 +62,10 @@ impl UI {
     pub fn run(&self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
         loop {
             // UIState is a function that returns Some<UITransition>, if Some, transition UI
+            match self.state {
+                UIState::Home => render_logs(),
+                UIState::LogView(i) => render_log(i),
+            }
             terminal.draw(|frame| frame.render_widget(self, frame.area()))?;
         }
     }
