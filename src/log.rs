@@ -13,7 +13,7 @@ fn get_log_dir() -> PathBuf {
         .collect()
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum PurchaseType {
     Groceries,
     Leisure,
@@ -32,18 +32,18 @@ impl fmt::Display for PurchaseType {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct Purchase {
-    name: String,
-    tag: PurchaseType,
-    cost: i64,
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Purchase {
+    pub name: String,
+    pub tag: PurchaseType,
+    pub cost: i64,
 }
 
 // A log is a list of purchases
-#[derive(Serialize, Deserialize)]
-struct Log {
-    purchases: Vec<Purchase>,
-    name: String,
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Log {
+    pub purchases: Vec<Purchase>,
+    pub name: String,
 }
 
 impl Default for Log {
@@ -61,11 +61,12 @@ struct SerializeLog {
 }
 
 pub struct Budgr {
-    logs: Vec<Log>,
+    pub logs: Vec<Log>,
 }
 
 // everything needed to interact with the data
 impl Budgr {
+    // change this to deserialize, not just make new variables
     pub fn new() -> Self {
         let logs: Vec<Log> = Vec::new(); // temporary (before frontend)
         Self { logs }
@@ -79,7 +80,7 @@ impl Budgr {
             // skip errors
             if let Ok(contents) = contents {
                 serialize_logs.push(SerializeLog {
-                    name: log.name.clone() + ".json", // TODO: fix use of clones here
+                    name: log.name.clone() + ".json",
                     contents,
                 });
             }
