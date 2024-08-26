@@ -1,20 +1,21 @@
 use crate::log::{read_budgr_from_directory, Budgr, Log, Purchase};
 use color_eyre::Result;
 
-use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    style::{palette::tailwind::SLATE, Color},
-    text::Line,
-    widgets::{Block, ListItem, ListState, Padding, Paragraph, Widget},
-    Terminal,
-};
+use std::io::{stdout, Stdout};
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    buffer::Buffer,
+    layout::{Constraint, Layout, Rect},
+    style::{palette::tailwind::SLATE, Color},
+    text::Line,
+    widgets::{Block, ListItem, ListState, Padding, Paragraph, Widget},
+    Frame, Terminal,
 };
 
 const TEXT_FG_COLOR: Color = SLATE.c200;
@@ -47,26 +48,31 @@ pub struct UI {
     user_input: String,
     input_mode: InputMode,
     budgr: Budgr,
+    terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
 }
 
 impl UI {
-    pub fn new() -> Result<Self> {
+    pub fn new(terminal: Terminal<CrosstermBackend<std::io::Stdout>>) -> Result<Self> {
         Ok(UI {
             state: UIState::Home,
             user_input: String::new(),
             input_mode: InputMode::Viewing,
             budgr: read_budgr_from_directory().unwrap(),
+            terminal,
         })
     }
 
-    pub fn run(&self, terminal: &mut Terminal<impl Backend>) -> Result<()> {
+    pub fn run(&mut self) -> Result<()> {
         loop {
-            // UIState is a function that returns Some<UITransition>, if Some, transition UI
-            match self.state {
-                UIState::Home => render_logs(),
-                UIState::LogView(i) => render_log(i),
-            }
-            terminal.draw(|frame| frame.render_widget(self, frame.area()))?;
+            let transition = match self.state {
+                UIState::Home => self.render_logs(),
+                UIState::LogView(i) => self.render_log(i),
+            };
+
+            match transition {
+                Some(_) => (),
+                None => (),
+            };
         }
     }
 
@@ -82,19 +88,20 @@ impl UI {
     fn exit(&mut self) {}
 }
 
-impl Widget for &UI {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        match self.state {
-            UIState::Home => self.render_logs(area, buf),
-            UIState::LogView(index) => self.render_log(area, buf, index),
-        }
+impl UI {
+    fn render_logs(&mut self) -> Option<UITransition> {
+        self.terminal.draw(|f| render_logs_draw(f));
+
+        None
+    }
+
+    fn render_log(&mut self, index: usize) -> Option<UITransition> {
+        None
     }
 }
 
-impl UI {
-    fn render_logs(&mut self, area: Rect, buf: &mut Buffer) {}
-
-    fn render_log(&mut self, area: Rect, buf: &mut Buffer, index: usize) {}
+fn render_logs_draw(frame: &mut Frame) {
+    frame.render_widget(Paragraph::new("test paragraph"), frame.area());
 }
 
 // - - - - - trait bullshit - - - - -
