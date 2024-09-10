@@ -1,6 +1,7 @@
 use crate::frontend::UI;
 mod frontend;
 mod log;
+mod ui_data;
 
 use std::io::stdout;
 

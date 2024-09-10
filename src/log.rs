@@ -44,6 +44,7 @@ pub struct Purchase {
 pub struct Log {
     pub purchases: Vec<Purchase>,
     pub name: String,
+    total: i64,
 }
 
 impl Default for Log {
@@ -149,9 +150,7 @@ impl Budgr {
             _ => log_index,
         };
 
-        self.logs[valid_index]
-            .purchases
-            .push(Purchase { name, tag, cost });
+        self.logs[valid_index].add_purchase(name, tag, cost);
 
         Ok(())
     }
@@ -242,4 +241,13 @@ fn get_path_to_log(log_name: &str) -> PathBuf {
     path.push(format!("{}{}", log_name, ".json"));
 
     path
+}
+
+impl Log {
+    pub fn get_total(&self) -> i64 {
+        self.purchases.iter().map(|purchase| purchase.cost).sum()
+    }
+    pub fn add_purchase(&mut self, name: String, tag: PurchaseType, cost: i64) {
+        self.purchases.push(Purchase { name, tag, cost });
+    }
 }
