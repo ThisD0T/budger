@@ -3,33 +3,41 @@ mod frontend;
 mod log;
 mod ui_data;
 
-use std::io::stdout;
+use log::{Budgr, PurchaseType};
 
 use color_eyre::Result;
 
-use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    buffer::Buffer,
-    crossterm::{execute, ExecutableCommand},
-    layout::{Constraint, Layout, Rect},
-    style::{palette::tailwind::SLATE, Color},
-    text::Line,
-    widgets::{Block, ListItem, ListState, Padding, Paragraph, Widget},
-    Terminal,
-};
-
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use log::read_budgr_from_directory;
 
 fn main() -> Result<()> {
-    enable_raw_mode().unwrap();
-    stdout().execute(EnterAlternateScreen)?;
-    let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).unwrap();
-    let mut ui = UI::new(terminal).unwrap();
+    //stdout().execute(EnterAlternateScreen)?;
+    //let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).unwrap();
+
+    let budgr = make_test_budgr();
+    budgr.serialize();
+
+    /*
+    let terminal = ratatui::init();
+    let budgr = read_budgr_from_directory().unwrap();
+    let mut ui = UI::new(budgr, terminal);
     ui.run();
+    */
 
     Ok(())
+}
+
+fn make_test_budgr() -> Budgr {
+    let mut budgr = Budgr::new();
+    for i in 0..4 {
+        let _ = budgr.new_log(format!("test_log{}", i));
+        for j in 0..4 {
+            let _ = budgr.add_purchase(
+                i,
+                format!("purchase:{}", (i * j) as i64),
+                PurchaseType::Groceries,
+                (i * j) as i64,
+            );
+        }
+    }
+    budgr
 }

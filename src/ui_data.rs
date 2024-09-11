@@ -5,18 +5,8 @@ use ratatui::widgets::TableState;
 const TEXT_FG_COLOR: Color = SLATE.c200;
 const BG_COLOR: Color = SLATE.c900;
 
-// state data
-pub struct LogShowData {
-    index: usize,
-    pub state: TableState,
-}
-
-pub struct BudgrShowData {
-    pub state: TableState,
-}
-
 pub enum UIState {
-    BudgrShow,
+    BudgrShow { state: TableState },
     LogShow(usize),
     PurchaseInput(),
     Quit,

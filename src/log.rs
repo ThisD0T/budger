@@ -2,7 +2,7 @@ use dirs::home_dir;
 use glob::glob;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::fs::{create_dir, remove_file, File};
+use std::fs::{create_dir, remove_file, DirEntry, File};
 use std::io::BufReader;
 use std::io::Write;
 use std::path::PathBuf;
@@ -44,7 +44,6 @@ pub struct Purchase {
 pub struct Log {
     pub purchases: Vec<Purchase>,
     pub name: String,
-    total: i64,
 }
 
 impl Default for Log {
@@ -74,6 +73,7 @@ impl Budgr {
     }
 
     pub fn serialize(&self) -> Result<(), std::io::Error> {
+        // TODO: make directory if it does not exist
         // serialize the logs into SerializeLog type to be put away into files
         let mut serialize_logs: Vec<SerializeLog> = Vec::new();
         for log in self.logs.iter() {

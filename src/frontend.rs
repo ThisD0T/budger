@@ -1,27 +1,22 @@
-use crate::log::{read_budgr_from_directory, Budgr, Log, Purchase};
-use crate::ui_data::{BudgrShowData, InputMode, LogShowData, UIState, UITransition, UserInput};
-use color_eyre::Result;
+use crate::log::{Budgr, Log};
+use crate::ui_data::{UIState, UITransition, UserInput};
 
-use std::io::{stdout, Stdout};
+use std::{io::Stdout, mem::swap};
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    event::{self, Event, KeyCode},
+    //terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{
     backend::CrosstermBackend,
-    buffer::Buffer,
-    layout::{Constraint, Layout, Rect},
-    style::{palette::tailwind::SLATE, Color, Style},
-    text::{Line, Text},
-    widgets::{
-        Block, Cell, ListItem, ListState, Padding, Paragraph, Row, Table, TableState, Widget,
-    },
-    Frame, Terminal,
+    layout::Constraint,
+    style::{palette::tailwind::SLATE, Modifier, Style},
+    text::Text,
+    widgets::{Cell, ListItem, Row, Table, TableState},
+    Terminal,
 };
 
-struct UI {
+pub struct UI {
     selection_index: usize,
     character_pos: usize, // position of cursor for input
     input: String,
@@ -29,6 +24,85 @@ struct UI {
     state: UIState,
     budgr: Budgr,
     terminal: Terminal<CrosstermBackend<Stdout>>,
+    run: bool,
+}
+
+impl UIState {
+    fn render(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+        input: &UserInput,
+        budgr: &mut Budgr,
+    ) -> Option<UITransition> {
+        match self {
+            UIState::BudgrShow { state } => UIState::budgr_show(terminal, state, input, budgr),
+            _ => None,
+        }
+    }
+
+    fn budgr_show(
+        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+        state: &mut TableState,
+        input: &UserInput,
+        budgr: &mut Budgr,
+    ) -> Option<UITransition> {
+        let highlight_style = Style::default()
+            .add_modifier(Modifier::REVERSED)
+            .fg(SLATE.c500);
+
+        // handle inputs
+        match input {
+            UserInput::Submit => return Some(UITransition::OpenLog(state.selected().unwrap())),
+            UserInput::Esc => return Some(UITransition::ExitLayer),
+            UserInput::Next => state.select_next(),
+            UserInput::Prev => state.select_previous(),
+            _ => {}
+        }
+
+        // make a bunch of widgets to draw
+
+        // table widget
+        let header = ["log name", "num purchases", "total expense"]
+            .into_iter()
+            .map(Cell::from)
+            .collect::<Row>()
+            .style(Style::new().fg(SLATE.c100).bg(SLATE.c950))
+            .height(2);
+
+        let rows = budgr.logs.iter().enumerate().map(|(i, log)| {
+            let colour = match i % 2 {
+                0 => SLATE.c800,
+                _ => SLATE.c600,
+            };
+            let item: [&String; 3] = [
+                &log.name,
+                &log.purchases.len().to_string(),
+                &log.get_total().to_string(),
+            ];
+            item.into_iter()
+                .map(|content| Cell::from(Text::from(format!("{content}"))))
+                .collect::<Row>()
+                .style(Style::new().fg(SLATE.c400).bg(colour))
+                .height(4)
+        });
+
+        let table = Table::new(
+            rows,
+            [
+                Constraint::Length(64),
+                Constraint::Min(26),
+                Constraint::Min(25),
+            ],
+        )
+        .header(header)
+        .highlight_style(highlight_style);
+
+        // draw them all in this closure
+        let _ = terminal.draw(|frame| {
+            frame.render_stateful_widget(table, frame.area(), state);
+        });
+        None
+    }
 }
 
 impl UI {
@@ -38,17 +112,21 @@ impl UI {
             character_pos: 0,
             input: String::new(),
             user_input: UserInput::None,
-            state: UIState::BudgrShow,
+            state: UIState::BudgrShow {
+                state: TableState::new(),
+            },
             budgr,
             terminal,
+            run: true,
         }
     }
 
     pub fn run(&mut self) {
-        loop {
+        while self.run {
             self.process_input();
             self.transition();
         }
+        self.budgr.serialize();
     }
 
     fn process_input(&mut self) {
@@ -68,23 +146,23 @@ impl UI {
     fn transition(&mut self) {
         // draw then transition if needed
 
-        if let Some(transition) = match self.state {
-            UIState::BudgrShow => self.budgr_show(),
-            UIState::LogShow(i) => self.log_show(i),
-            UIState::PurchaseInput() => self.purchase_input(),
-            _ => None,
-        } {
+        if let Some(transition) =
+            self.state
+                .render(&mut self.terminal, &mut self.user_input, &mut self.budgr)
+        {
+            // transition if needed
             match (&self.state, transition) {
-                (UIState::BudgrShow, UITransition::ExitApp) => {
-                    self.state = UIState::Quit;
-                    self.transition_flush();
+                (UIState::BudgrShow { state: _ }, UITransition::ExitLayer) => {
+                    self.run = false;
                 }
-                (UIState::BudgrShow, UITransition::OpenLog(i)) => {
+                (UIState::BudgrShow { state: _ }, UITransition::OpenLog(i)) => {
                     self.state = UIState::LogShow(i);
                     self.transition_flush();
                 }
                 (UIState::LogShow(_), UITransition::ExitLayer) => {
-                    self.state = UIState::BudgrShow;
+                    self.state = UIState::BudgrShow {
+                        state: TableState::new(),
+                    };
                     self.transition_flush();
                 }
                 (_, _) => (),
@@ -95,61 +173,6 @@ impl UI {
     fn transition_flush(&mut self) {
         self.input.clear();
         self.selection_index = 0;
-    }
-
-    // UIState methods
-    fn exit_app(&mut self) {}
-    fn budgr_show(&mut self, dat: BudgrShowData) -> Option<UITransition> {
-        // handle inputs
-        if let Some(t) = self.standard_input_handle() {
-            return Some(t);
-        }
-
-        match self.user_input {
-            UserInput::Submit => return Some(UITransition::OpenLog(dat.state.selected().unwrap())),
-            _ => {}
-        }
-
-        // make a bunch of widgets to draw
-
-        // table
-        let header = ["log name", "num purchases", "total expense"]
-            .into_iter()
-            .map(Cell::from)
-            .collect::<Row>()
-            .style(Style::new().fg(SLATE.c100).bg(SLATE.c950))
-            .height(4);
-
-        let rows = self.budgr.logs.iter().enumerate().map(|(i, log)| {
-            let colour = match i % 2 {
-                0 => SLATE.c900,
-                _ => SLATE.c800,
-            };
-            let item: [&String; 3] = [
-                &log.name,
-                &log.purchases.len().to_string(),
-                &log.get_total().to_string(),
-            ];
-            item.into_iter()
-                .map(|content| Cell::from(Text::from(format!("{content}"))))
-                .collect::<Row>()
-                .style(Style::new().fg(SLATE.c100).bg(colour))
-                .height(4);
-        });
-
-        let table = Table::new(rows).header(header);
-
-        // draw them all in this closure
-        self.terminal.draw(|frame| {});
-        None
-    }
-
-    fn log_show(&mut self, index: usize) -> Option<UITransition> {
-        None
-    }
-
-    fn purchase_input(&mut self) -> Option<UITransition> {
-        None
     }
 
     // if standard_input_handle returns Some(foo) it means the user wishes to exit the layer
