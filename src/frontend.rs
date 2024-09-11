@@ -10,11 +10,16 @@ use crossterm::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::Constraint,
-    style::{palette::tailwind::SLATE, Modifier, Style},
+    style::{palette::tailwind::SLATE, Color, Modifier, Style},
     text::Text,
-    widgets::{Cell, ListItem, Row, Table, TableState},
+    widgets::{Cell, ListItem, ListState, Row, Table, TableState},
     Terminal,
 };
+
+// style
+
+const HIGHLIGHT_STYLE: Style = Style::new().add_modifier(Modifier::REVERSED).fg(SLATE.c500);
+const ITEM_STYLE: Style = Style::new().fg(SLATE.c400);
 
 pub struct UI {
     selection_index: usize,
@@ -35,73 +40,10 @@ impl UIState {
         budgr: &mut Budgr,
     ) -> Option<UITransition> {
         match self {
-            UIState::BudgrShow { state } => UIState::budgr_show(terminal, state, input, budgr),
+            UIState::BudgrShow { state } => budgr_show(terminal, state, input, budgr),
+            UIState::LogShow { index, state } => log_show(index, state),
             _ => None,
         }
-    }
-
-    fn budgr_show(
-        terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-        state: &mut TableState,
-        input: &UserInput,
-        budgr: &mut Budgr,
-    ) -> Option<UITransition> {
-        let highlight_style = Style::default()
-            .add_modifier(Modifier::REVERSED)
-            .fg(SLATE.c500);
-
-        // handle inputs
-        match input {
-            UserInput::Submit => return Some(UITransition::OpenLog(state.selected().unwrap())),
-            UserInput::Esc => return Some(UITransition::ExitLayer),
-            UserInput::Next => state.select_next(),
-            UserInput::Prev => state.select_previous(),
-            _ => {}
-        }
-
-        // make a bunch of widgets to draw
-
-        // table widget
-        let header = ["log name", "num purchases", "total expense"]
-            .into_iter()
-            .map(Cell::from)
-            .collect::<Row>()
-            .style(Style::new().fg(SLATE.c100).bg(SLATE.c950))
-            .height(2);
-
-        let rows = budgr.logs.iter().enumerate().map(|(i, log)| {
-            let colour = match i % 2 {
-                0 => SLATE.c800,
-                _ => SLATE.c600,
-            };
-            let item: [&String; 3] = [
-                &log.name,
-                &log.purchases.len().to_string(),
-                &log.get_total().to_string(),
-            ];
-            item.into_iter()
-                .map(|content| Cell::from(Text::from(format!("{content}"))))
-                .collect::<Row>()
-                .style(Style::new().fg(SLATE.c400).bg(colour))
-                .height(4)
-        });
-
-        let table = Table::new(
-            rows,
-            [
-                Constraint::Length(64),
-                Constraint::Min(26),
-                Constraint::Min(25),
-            ],
-        )
-        .header(header)
-        .highlight_style(highlight_style);
-
-        // draw them all in this closure
-        let _ = terminal.draw(|frame| {
-            frame.render_stateful_widget(table, frame.area(), state);
-        });
-        None
     }
 }
 
@@ -152,13 +94,16 @@ impl UI {
         {
             // transition if needed
             match (&self.state, transition) {
+                // exit the app
                 (UIState::BudgrShow { state: _ }, UITransition::ExitLayer) => {
                     self.run = false;
                 }
+                // open a log
                 (UIState::BudgrShow { state: _ }, UITransition::OpenLog(i)) => {
                     self.state = UIState::LogShow(i);
                     self.transition_flush();
                 }
+                // go back to seeing all logs from log show
                 (UIState::LogShow(_), UITransition::ExitLayer) => {
                     self.state = UIState::BudgrShow {
                         state: TableState::new(),
@@ -234,6 +179,113 @@ impl UI {
 
     fn reset_cursor(&mut self) {
         self.character_pos = 0;
+    }
+}
+
+fn budgr_show(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    state: &mut TableState,
+    input: &UserInput,
+    budgr: &Budgr,
+) -> Option<UITransition> {
+    // handle inputs
+    match input {
+        UserInput::Submit => return Some(UITransition::OpenLog(state.selected().unwrap())),
+        UserInput::Esc => return Some(UITransition::ExitLayer),
+        UserInput::Next => state.select_next(),
+        UserInput::Prev => state.select_previous(),
+        _ => {}
+    }
+
+    // make a bunch of widgets to draw
+
+    // table widget
+    let header = ["log name", "num purchases", "total expense"]
+        .into_iter()
+        .map(Cell::from)
+        .collect::<Row>()
+        .style(Style::new().fg(SLATE.c100).bg(SLATE.c950))
+        .height(2);
+
+    let rows = budgr.logs.iter().enumerate().map(|(i, log)| {
+        let colour = alternate_colour(&i);
+        let item: [&String; 3] = [
+            &log.name,
+            &log.purchases.len().to_string(),
+            &log.get_total().to_string(),
+        ];
+        item.into_iter()
+            .map(|content| Cell::from(Text::from(format!("{content}"))))
+            .collect::<Row>()
+            .style(Style::new().fg(SLATE.c400).bg(colour))
+            .height(4)
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(64),
+            Constraint::Min(26),
+            Constraint::Min(25),
+        ],
+    )
+    .header(header)
+    .highlight_style(HIGHLIGHT_STYLE);
+
+    // draw them all in this closure
+    let _ = terminal.draw(|frame| {
+        frame.render_stateful_widget(table, frame.area(), state);
+    });
+    None
+}
+
+fn log_show(
+    index: &mut usize,
+    state: &mut ListState,
+    input: &UserInput,
+    budgr: &Budgr,
+) -> Option<UITransition> {
+    // input handle
+    match input {
+        //UserInput::Submit => return Some(UITransition::OpenLog(state.selected().unwrap())),
+        UserInput::Esc => return Some(UITransition::ExitLayer),
+        UserInput::Next => state.select_next(),
+        UserInput::Prev => state.select_previous(),
+        _ => {}
+    }
+
+    // make widgets
+    let header = ["name", "purchase type", "cost"]
+        .into_iter()
+        .map(Cell::from)
+        .collect::<Row>()
+        .style(Style::new().fg(SLATE.c100).bg(SLATE.c950))
+        .height(2);
+
+    let rows = budgr.logs[*index]
+        .purchases
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let colour = alternate_colour(&i);
+
+            let item: [&String; 3] = [&p.name, &p.tag.to_string(), &p.cost.to_string()];
+
+            item.into_iter()
+                .map(|content| Cell::from(Text::from(format!("{content}"))))
+                .collect::<Row>()
+                .style(Style::new)
+        });
+
+    // render widgets
+
+    None
+}
+
+fn alternate_colour(i: &usize) -> Color {
+    match i % 2 {
+        0 => SLATE.c800,
+        _ => SLATE.c600,
     }
 }
 

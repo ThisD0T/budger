@@ -13,15 +13,10 @@ fn main() -> Result<()> {
     //stdout().execute(EnterAlternateScreen)?;
     //let terminal = Terminal::new(CrosstermBackend::new(std::io::stdout())).unwrap();
 
-    let budgr = make_test_budgr();
-    budgr.serialize();
-
-    /*
     let terminal = ratatui::init();
     let budgr = read_budgr_from_directory().unwrap();
     let mut ui = UI::new(budgr, terminal);
     ui.run();
-    */
 
     Ok(())
 }
