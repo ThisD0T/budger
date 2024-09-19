@@ -12,14 +12,14 @@ use ratatui::{
     layout::Constraint,
     style::{palette::tailwind::SLATE, Color, Modifier, Style},
     text::Text,
-    widgets::{Cell, ListItem, ListState, Row, Table, TableState},
+    widgets::{Cell, ListItem, ListState, Row, Table, TableState, Paragraph},
     Terminal,
 };
 
 // style
 
-const HIGHLIGHT_STYLE: Style = Style::new().add_modifier(Modifier::REVERSED).fg(SLATE.c500);
-const ITEM_STYLE: Style = Style::new().fg(SLATE.c400);
+const HIGHLIGHT_STYLE: Style = Style::new().add_modifier(Modifier::REVERSED).fg(SLATE.c900).bg(SLATE.c100);
+const ITEM_STYLE: Style = Style::new().fg(SLATE.c100).bg(SLATE.c900);
 
 pub struct UI {
     selection_index: usize,
@@ -40,7 +40,7 @@ impl UIState {
         match self {
             UIState::BudgrShow { state } => budgr_show(terminal, state, input, budgr),
             UIState::LogShow { index, state } => log_show(terminal, index, state, input, budgr),
-            UIState::PurchaseInput { input_data, selection_index } => purchase_input(terminal, input_data, input, selection_index),
+            UIState::PurchaseInput { input_data, selection_index, log_index } => purchase_input(terminal, input_data, input, selection_index, *log_index),
             _ => None,
         }
     }
@@ -106,7 +106,14 @@ impl UI {
                     };
                     self.transition_flush();
                 }
-                (UIState::LogShow { index: i, state: _ }, UITransition::NewPurchase) => {}
+                // create a new purchase
+                (UIState::LogShow { index: i, state: _ }, UITransition::NewPurchase) => {
+                    self.state = UIState::PurchaseInput {
+                        input_data: vec![InputData{input: String::new(), character_pos: 0}; 3],
+                        selection_index: 0,
+                        log_index: *i
+                    }
+                }
                 // go back to seeing all logs from log show
                 (UIState::LogShow { index: _, state: _ }, UITransition::ExitLayer) => {
                     self.state = UIState::BudgrShow {
@@ -205,6 +212,7 @@ fn log_show(
         UserInput::Esc => return Some(UITransition::ExitLayer),
         UserInput::Next => state.select_next(),
         UserInput::Prev => state.select_previous(),
+        UserInput::Char('a') => return Some(UITransition::NewPurchase),
         _ => {}
     }
 
@@ -221,7 +229,7 @@ fn log_show(
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let item: [&String; 3] = [&p.name, &p.tag.to_string(), &p.cost.to_string()];
+            let item: [&String; 2] = [&p.name, &p.cost.to_string()];
 
             item.into_iter()
                 .map(|content| Cell::from(Text::from(format!("{content}"))))
@@ -246,17 +254,56 @@ fn log_show(
     None
 }
 
-fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut InputData, input: &UserInput, selection_index: &mut u16) -> Option<UITransition> {
+fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut Vec<InputData>, input: &UserInput, selection_index: &mut usize, log_index: usize) -> Option<UITransition> {
     // input handle
     match input {
-        UserInput::Next => dat.move_cursor_right(),
-        UserInput::Prev => dat.move_cursor_left(),
+        UserInput::Next => dat[*selection_index].move_cursor_right(),
+        UserInput::Prev => dat[*selection_index].move_cursor_left(),
+        UserInput::NextInput => {
+            if *selection_index < dat.len() {
+                *selection_index += 1
+            }
+        }
+        UserInput::PrevInput => *selection_index -= 1,
+        UserInput::Char(c) => dat[*selection_index].enter_char(*c),
         UserInput::Esc => return Some(UITransition::ExitLayer),
+        UserInput::Submit => {
+            match selection_index {
+                _ => (),
+            };
+        }
         _ => (),
     }
 
+
     // make widgets
+    
+    let mut name_input = Paragraph::new(dat[0].input.clone());
+    let mut tag_input = Paragraph::new(dat[1].input.clone());
+    let mut cost = Paragraph::new(dat[2].input.clone());
+
+
+    match selection_index {
+        0 => {
+            name_input = name_input.style(HIGHLIGHT_STYLE);
+        }
+        1 => {
+            tag_input = tag_input.style(HIGHLIGHT_STYLE);
+        }
+        2 => {
+            cost = cost.style(HIGHLIGHT_STYLE);
+        }
+        _ => (),
+    };
+
     // render
+    
+    terminal.draw(| f | {
+        f.render_widget(name_input, f.area());
+        f.render_widget(tag_input, f.area());
+        f.render_widget(cost, f.area());
+    });
+
     None
 }
 

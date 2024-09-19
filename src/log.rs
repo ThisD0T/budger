@@ -35,7 +35,6 @@ impl fmt::Display for PurchaseType {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Purchase {
     pub name: String,
-    pub tag: PurchaseType,
     pub cost: i64,
 }
 
@@ -142,7 +141,6 @@ impl Budgr {
         &mut self,
         log_index: usize,
         name: String,
-        tag: PurchaseType,
         cost: i64,
     ) -> Result<(), String> {
         let valid_index = match log_index {
@@ -150,7 +148,7 @@ impl Budgr {
             _ => log_index,
         };
 
-        self.logs[valid_index].add_purchase(name, tag, cost);
+        self.logs[valid_index].add_purchase(name, cost);
 
         Ok(())
     }
@@ -174,8 +172,8 @@ impl Budgr {
 
     fn print_purchase(purchase: &Purchase) {
         println!(
-            "purchase: name: {}, tag: {}, purchase: {}",
-            purchase.name, purchase.tag, purchase.cost
+            "purchase: name: {}, purchase: {}",
+            purchase.name, purchase.cost
         );
     }
 
@@ -247,7 +245,7 @@ impl Log {
     pub fn get_total(&self) -> i64 {
         self.purchases.iter().map(|purchase| purchase.cost).sum()
     }
-    pub fn add_purchase(&mut self, name: String, tag: PurchaseType, cost: i64) {
-        self.purchases.push(Purchase { name, tag, cost });
+    pub fn add_purchase(&mut self, name: String, cost: i64) {
+        self.purchases.push(Purchase { name, cost });
     }
 }

@@ -8,7 +8,7 @@ const BG_COLOR: Color = SLATE.c900;
 pub enum UIState {
     BudgrShow { state: TableState },
     LogShow { index: usize, state: TableState },
-    PurchaseInput { input_data: InputData, selection_index: u16 },
+    PurchaseInput { input_data: Vec<InputData>, selection_index: usize, log_index: usize },
     Quit,
 }
 
@@ -39,6 +39,7 @@ pub enum InputMode {
 }
 
 // data needed to create an input box
+#[derive(Clone)]
 pub struct InputData {
     pub input: String,
     pub character_pos: usize,

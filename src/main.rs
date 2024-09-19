@@ -29,7 +29,6 @@ fn make_test_budgr() -> Budgr {
             let _ = budgr.add_purchase(
                 i,
                 format!("purchase:{}", (i * j) as i64),
-                PurchaseType::Groceries,
                 (i * j) as i64,
             );
         }
