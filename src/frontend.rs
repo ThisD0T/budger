@@ -1,5 +1,5 @@
 use crate::log::{Budgr, Log};
-use crate::ui_data::{UIState, UITransition, UserInput};
+use crate::ui_data::{InputData, UIState, UITransition, UserInput};
 
 use std::{io::Stdout, mem::swap};
 
@@ -23,8 +23,6 @@ const ITEM_STYLE: Style = Style::new().fg(SLATE.c400);
 
 pub struct UI {
     selection_index: usize,
-    character_pos: usize, // position of cursor for input
-    input: String,
     user_input: UserInput,
     state: UIState,
     budgr: Budgr,
@@ -37,11 +35,12 @@ impl UIState {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         input: &UserInput,
-        budgr: &mut Budgr,
+        budgr: &Budgr,
     ) -> Option<UITransition> {
         match self {
             UIState::BudgrShow { state } => budgr_show(terminal, state, input, budgr),
-            UIState::LogShow { index, state } => log_show(index, state),
+            UIState::LogShow { index, state } => log_show(terminal, index, state, input, budgr),
+            UIState::PurchaseInput { input_data, selection_index } => purchase_input(terminal, input_data, input, selection_index),
             _ => None,
         }
     }
@@ -51,8 +50,6 @@ impl UI {
     pub fn new(budgr: Budgr, terminal: Terminal<CrosstermBackend<Stdout>>) -> Self {
         UI {
             selection_index: 0,
-            character_pos: 0,
-            input: String::new(),
             user_input: UserInput::None,
             state: UIState::BudgrShow {
                 state: TableState::new(),
@@ -80,14 +77,17 @@ impl UI {
                 KeyCode::Enter => UserInput::Submit,
                 KeyCode::Left => UserInput::Prev,
                 KeyCode::Right => UserInput::Next,
+                KeyCode::Up => UserInput::NextInput,
+                KeyCode::Down => UserInput::PrevInput,
                 KeyCode::Esc => UserInput::Esc,
+                KeyCode::Backspace => UserInput::Backspace,
                 _ => UserInput::None,
             }
         }
     }
     fn transition(&mut self) {
-        // draw then transition if needed
 
+        // draw then transition if needed
         if let Some(transition) =
             self.state
                 .render(&mut self.terminal, &mut self.user_input, &mut self.budgr)
@@ -100,11 +100,15 @@ impl UI {
                 }
                 // open a log
                 (UIState::BudgrShow { state: _ }, UITransition::OpenLog(i)) => {
-                    self.state = UIState::LogShow(i);
+                    self.state = UIState::LogShow {
+                        index: i,
+                        state: TableState::new(),
+                    };
                     self.transition_flush();
                 }
+                (UIState::LogShow { index: i, state: _ }, UITransition::NewPurchase) => {}
                 // go back to seeing all logs from log show
-                (UIState::LogShow(_), UITransition::ExitLayer) => {
+                (UIState::LogShow { index: _, state: _ }, UITransition::ExitLayer) => {
                     self.state = UIState::BudgrShow {
                         state: TableState::new(),
                     };
@@ -116,7 +120,6 @@ impl UI {
     }
 
     fn transition_flush(&mut self) {
-        self.input.clear();
         self.selection_index = 0;
     }
 
@@ -129,56 +132,6 @@ impl UI {
             _ => {}
         }
         return None;
-    }
-
-    // - - - string input stuff - - -
-    // mostly stolen from ratatui example
-
-    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
-        new_cursor_pos.clamp(0, self.input.chars().count())
-    }
-
-    fn move_cursor_left(&mut self) {
-        let cursor_moved_left = self.character_pos.saturating_sub(1);
-        self.character_pos = self.clamp_cursor(cursor_moved_left);
-    }
-
-    fn move_cursor_right(&mut self) {
-        let cursor_moved_right = self.character_pos.saturating_add(1);
-        self.character_pos = self.clamp_cursor(cursor_moved_right);
-    }
-
-    fn enter_char(&mut self, new_char: char) {
-        let index = self.byte_index();
-        self.input.insert(index, new_char);
-    }
-
-    fn byte_index(&self) -> usize {
-        self.input
-            .char_indices()
-            .map(|(i, _)| i)
-            .nth(self.character_pos)
-            .unwrap_or(self.input.len())
-    }
-
-    fn delete_char(&mut self) {
-        // TODO: reverse this if statement
-        let is_not_cursor_leftmost = self.character_pos != 0;
-
-        // we are creating 2 iterators over that skip over the character that the curosr is over then combining them to delete the char
-        if is_not_cursor_leftmost {
-            let current_index = self.character_pos;
-            let from_left_to_current_index = current_index - 1;
-            let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
-            let after_char_to_delete = self.input.chars().skip(current_index);
-
-            self.input = before_char_to_delete.chain(after_char_to_delete).collect();
-            self.move_cursor_left();
-        }
-    }
-
-    fn reset_cursor(&mut self) {
-        self.character_pos = 0;
     }
 }
 
@@ -240,8 +193,9 @@ fn budgr_show(
 }
 
 fn log_show(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     index: &mut usize,
-    state: &mut ListState,
+    state: &mut TableState,
     input: &UserInput,
     budgr: &Budgr,
 ) -> Option<UITransition> {
@@ -267,18 +221,42 @@ fn log_show(
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let colour = alternate_colour(&i);
-
             let item: [&String; 3] = [&p.name, &p.tag.to_string(), &p.cost.to_string()];
 
             item.into_iter()
                 .map(|content| Cell::from(Text::from(format!("{content}"))))
                 .collect::<Row>()
-                .style(Style::new)
+                .style(ITEM_STYLE.bg(alternate_colour(&i)))
+                .height(4)
         });
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(64),
+            Constraint::Min(26),
+            Constraint::Min(25),
+        ],
+    )
+    .header(header)
+    .highlight_style(HIGHLIGHT_STYLE);
 
     // render widgets
+    terminal.draw(|frame| frame.render_stateful_widget(table, frame.area(), state));
 
+    None
+}
+
+fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut InputData, input: &UserInput, selection_index: &mut u16) -> Option<UITransition> {
+    // input handle
+    match input {
+        UserInput::Next => dat.move_cursor_right(),
+        UserInput::Prev => dat.move_cursor_left(),
+        UserInput::Esc => return Some(UITransition::ExitLayer),
+        _ => (),
+    }
+
+    // make widgets
+    // render
     None
 }
 
