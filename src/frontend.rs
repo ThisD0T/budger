@@ -9,10 +9,10 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::Constraint,
+    layout::{Constraint, Layout, Direction},
     style::{palette::tailwind::SLATE, Color, Modifier, Style},
     text::Text,
-    widgets::{Cell, ListItem, ListState, Row, Table, TableState, Paragraph},
+    widgets::{Cell, ListItem, Row, Table, TableState, Paragraph},
     Terminal,
 };
 
@@ -62,8 +62,8 @@ impl UI {
 
     pub fn run(&mut self) {
         while self.run {
-            self.process_input();
             self.transition();
+            self.process_input();
         }
         self.budgr.serialize();
     }
@@ -77,8 +77,8 @@ impl UI {
                 KeyCode::Enter => UserInput::Submit,
                 KeyCode::Left => UserInput::Prev,
                 KeyCode::Right => UserInput::Next,
-                KeyCode::Up => UserInput::NextInput,
-                KeyCode::Down => UserInput::PrevInput,
+                KeyCode::Down=> UserInput::NextSelect,
+                KeyCode::Up => UserInput::PrevSelect,
                 KeyCode::Esc => UserInput::Esc,
                 KeyCode::Backspace => UserInput::Backspace,
                 _ => UserInput::None,
@@ -121,6 +121,9 @@ impl UI {
                     };
                     self.transition_flush();
                 }
+                (UIState::PurchaseInput { input_data: _, selection_index: _, log_index }, UITransition::ExitLayer) => {
+                    self.state = UIState::LogShow{index: *log_index, state: TableState::new()};
+                }
                 (_, _) => (),
             }
         }
@@ -152,8 +155,8 @@ fn budgr_show(
     match input {
         UserInput::Submit => return Some(UITransition::OpenLog(state.selected().unwrap())),
         UserInput::Esc => return Some(UITransition::ExitLayer),
-        UserInput::Next => state.select_next(),
-        UserInput::Prev => state.select_previous(),
+        UserInput::NextSelect => state.select_next(),
+        UserInput::PrevSelect => state.select_previous(),
         _ => {}
     }
 
@@ -210,8 +213,8 @@ fn log_show(
     match input {
         //UserInput::Submit => return Some(UITransition::OpenLog(state.selected().unwrap())),
         UserInput::Esc => return Some(UITransition::ExitLayer),
-        UserInput::Next => state.select_next(),
-        UserInput::Prev => state.select_previous(),
+        UserInput::NextSelect => state.select_next(),
+        UserInput::PrevSelect => state.select_previous(),
         UserInput::Char('a') => return Some(UITransition::NewPurchase),
         _ => {}
     }
@@ -259,12 +262,16 @@ fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut
     match input {
         UserInput::Next => dat[*selection_index].move_cursor_right(),
         UserInput::Prev => dat[*selection_index].move_cursor_left(),
-        UserInput::NextInput => {
+        UserInput::NextSelect => {
             if *selection_index < dat.len() {
                 *selection_index += 1
             }
         }
-        UserInput::PrevInput => *selection_index -= 1,
+        UserInput::PrevSelect => {
+            if *selection_index > 0 {
+                *selection_index -= 1
+            }
+        }
         UserInput::Char(c) => dat[*selection_index].enter_char(*c),
         UserInput::Esc => return Some(UITransition::ExitLayer),
         UserInput::Submit => {
@@ -278,30 +285,26 @@ fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut
 
     // make widgets
     
-    let mut name_input = Paragraph::new(dat[0].input.clone());
-    let mut tag_input = Paragraph::new(dat[1].input.clone());
-    let mut cost = Paragraph::new(dat[2].input.clone());
-
-
-    match selection_index {
+    let display: Paragraph = match selection_index {
         0 => {
-            name_input = name_input.style(HIGHLIGHT_STYLE);
+            Paragraph::new(dat[0].input.clone()).style(HIGHLIGHT_STYLE)
         }
         1 => {
-            tag_input = tag_input.style(HIGHLIGHT_STYLE);
+            Paragraph::new(dat[1].input.clone()).style(HIGHLIGHT_STYLE)
         }
         2 => {
-            cost = cost.style(HIGHLIGHT_STYLE);
+            Paragraph::new(dat[2].input.clone()).style(HIGHLIGHT_STYLE)
         }
-        _ => (),
+        3 => {
+            Paragraph::new("Submit").style(HIGHLIGHT_STYLE)
+        }
+        _ => Paragraph::new("error"),
     };
 
     // render
     
-    terminal.draw(| f | {
-        f.render_widget(name_input, f.area());
-        f.render_widget(tag_input, f.area());
-        f.render_widget(cost, f.area());
+    let _ = terminal.draw(| f | {
+        f.render_widget(display, f.area());
     });
 
     None

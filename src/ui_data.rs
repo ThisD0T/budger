@@ -24,8 +24,8 @@ pub enum UITransition {
 pub enum UserInput {
     Next,
     Prev,
-    NextInput,
-    PrevInput,
+    NextSelect,
+    PrevSelect,
     Char(char),
     Submit,
     Esc,
@@ -66,6 +66,7 @@ impl InputData {
     pub fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
         self.input.insert(index, new_char);
+        self.move_cursor_right();
     }
 
     fn byte_index(&self) -> usize {
