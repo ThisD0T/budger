@@ -7,9 +7,10 @@ use crossterm::{
     event::{self, Event, KeyCode},
     //terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::style::Stylize;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Layout, Direction},
+    layout::{Constraint, Layout, Direction, Constraint::Ratio},
     style::{palette::tailwind::SLATE, Color, Modifier, Style},
     text::Text,
     widgets::{Cell, ListItem, Row, Table, TableState, Paragraph},
@@ -35,12 +36,12 @@ impl UIState {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<Stdout>>,
         input: &UserInput,
-        budgr: &Budgr,
+        budgr: &mut Budgr,
     ) -> Option<UITransition> {
         match self {
             UIState::BudgrShow { state } => budgr_show(terminal, state, input, budgr),
             UIState::LogShow { index, state } => log_show(terminal, index, state, input, budgr),
-            UIState::PurchaseInput { input_data, selection_index, log_index } => purchase_input(terminal, input_data, input, selection_index, *log_index),
+            UIState::PurchaseInput { input_data, selection_index, log_index } => purchase_input(terminal, input_data, input, selection_index, *log_index, budgr),
             _ => None,
         }
     }
@@ -111,7 +112,7 @@ impl UI {
                     self.state = UIState::PurchaseInput {
                         input_data: vec![InputData{input: String::new(), character_pos: 0}; 3],
                         selection_index: 0,
-                        log_index: *i
+                        log_index: *i,
                     }
                 }
                 // go back to seeing all logs from log show
@@ -207,7 +208,7 @@ fn log_show(
     index: &mut usize,
     state: &mut TableState,
     input: &UserInput,
-    budgr: &Budgr,
+    budgr: &mut Budgr,
 ) -> Option<UITransition> {
     // input handle
     match input {
@@ -216,6 +217,10 @@ fn log_show(
         UserInput::NextSelect => state.select_next(),
         UserInput::PrevSelect => state.select_previous(),
         UserInput::Char('a') => return Some(UITransition::NewPurchase),
+        UserInput::Char('d') => {
+            budgr.remove_purchase(*index, state.selected()?);
+            return None
+        }
         _ => {}
     }
 
@@ -257,7 +262,7 @@ fn log_show(
     None
 }
 
-fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut Vec<InputData>, input: &UserInput, selection_index: &mut usize, log_index: usize) -> Option<UITransition> {
+fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut Vec<InputData>, input: &UserInput, selection_index: &mut usize, log_index: usize, budgr: &mut Budgr) -> Option<UITransition> {
     // input handle
     match input {
         UserInput::Next => dat[*selection_index].move_cursor_right(),
@@ -276,6 +281,20 @@ fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut
         UserInput::Esc => return Some(UITransition::ExitLayer),
         UserInput::Submit => {
             match selection_index {
+                // attempt to create a new purchase
+                2 => {
+                    let cost: i64;
+                    if let Ok(int) = dat[1].input.parse::<i64>() {
+                        cost = int;
+                    } else {
+                        // TODO: error handling (don't just spit the user out of the menu if they
+                        // inputted something incorrectly)
+
+                        return Some(UITransition::ExitLayer);
+                    };
+
+                    budgr.add_purchase(log_index, dat[0].input.clone(), cost);
+                }
                 _ => (),
             };
         }
@@ -285,26 +304,32 @@ fn purchase_input( terminal: &mut Terminal<CrosstermBackend<Stdout>>,  dat: &mut
 
     // make widgets
     
-    let display: Paragraph = match selection_index {
+    let mut name_input = Paragraph::new(dat[0].input.as_str());
+    let mut cost_input = Paragraph::new(dat[1].input.as_str());
+    let mut submit_button = Paragraph::new("Submit");
+    
+    match selection_index {
         0 => {
-            Paragraph::new(dat[0].input.clone()).style(HIGHLIGHT_STYLE)
+            name_input = name_input.style(HIGHLIGHT_STYLE).add_modifier(Modifier::BOLD);
         }
         1 => {
-            Paragraph::new(dat[1].input.clone()).style(HIGHLIGHT_STYLE)
+            cost_input = cost_input.style(HIGHLIGHT_STYLE).add_modifier(Modifier::BOLD);
         }
         2 => {
-            Paragraph::new(dat[2].input.clone()).style(HIGHLIGHT_STYLE)
+            submit_button = submit_button.style(HIGHLIGHT_STYLE).add_modifier(Modifier::BOLD);
         }
-        3 => {
-            Paragraph::new("Submit").style(HIGHLIGHT_STYLE)
-        }
-        _ => Paragraph::new("error"),
+        _ => (),
     };
 
     // render
     
     let _ = terminal.draw(| f | {
-        f.render_widget(display, f.area());
+        let layout = Layout::vertical([Ratio(1, 3); 3]);
+        let [name_area, cost_area, submit_area] = layout.areas(f.area());
+
+        f.render_widget(name_input, name_area);
+        f.render_widget(cost_input, cost_area);
+        f.render_widget(submit_button, submit_area);
     });
 
     None

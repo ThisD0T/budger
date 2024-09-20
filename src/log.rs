@@ -153,6 +153,22 @@ impl Budgr {
         Ok(())
     }
 
+    pub fn remove_purchase(
+        &mut self,
+        log_index: usize,
+        purchase_index: usize,
+    ) -> Result<(), &'static str> {
+        if log_index > self.logs.len() {
+            return Err("index out of bounds");
+        } else if purchase_index > self.logs[log_index].purchases.len() {
+            return Err("index out of bounds");
+        }
+
+        self.logs[log_index].purchases.remove(purchase_index);
+
+        Ok(())
+    }
+
     pub fn get_total(&self, log_index: usize) -> Result<i64, String> {
         let valid_index = match log_index {
             _ if self.logs.len() < log_index => return Err("ERROR: Index too large".to_string()),
